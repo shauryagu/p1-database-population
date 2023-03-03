@@ -47,7 +47,7 @@ CREATE TABLE Messages (
     message_content VARCHAR2(2000) NOT NULL,
     sent_time TIMESTAMP NOT NULL,
     FOREIGN KEY (sender_id) REFERENCES Users(user_id),
-    FOREIGN KEY (receiver_id) REFERENCES Users(user_id),
+    FOREIGN KEY (receiver_id) REFERENCES Users(user_id)
 );
 
 CREATE TABLE Programs (
@@ -55,7 +55,7 @@ CREATE TABLE Programs (
     institution VARCHAR2(100) NOT NULL,
     concentration VARCHAR2(100) NOT NULL,
     degree VARCHAR2(100) NOT NULL,
-    CONSTRAINT UQ_Program UNIQUE (insitution, concentration, degree)
+    CONSTRAINT UQ_Program UNIQUE (institution, concentration, degree)
 );
 
 CREATE TABLE Education (
@@ -89,9 +89,9 @@ CREATE TABLE Participants (
     user_id INTEGER NOT NULL,
     confirmation VARCHAR2(100) NOT NULL,
     PRIMARY KEY (event_id, user_id),
-    FOREIGN KEY (event_id) REREFENCES User_Events(event_id),
+    FOREIGN KEY (event_id) REFERENCES User_Events(event_id),
     FOREIGN KEY (user_id) REFERENCES Users(user_id),
-    CHECK confirmation in ('Attending', 'Unsure', 'Declines', 'Not_Replied')
+    CHECK (confirmation in ('Attending', 'Unsure', 'Declines', 'Not_Replied'))
 );
 
 CREATE TABLE Albums (
@@ -104,7 +104,7 @@ CREATE TABLE Albums (
     album_visibility VARCHAR2(100) NOT NULL,
     cover_photo_id INTEGER NOT NULL,
     FOREIGN KEY (album_owner_id) REFERENCES Users(user_id),
-    CHECK album_visibility in ('Everyone', 'Friends', 'Friends_Of_Friends', 'Myself')
+    CHECK (album_visibility in ('Everyone', 'Friends', 'Friends_Of_Friends', 'Myself'))
 );
 
 CREATE TABLE Photos (
@@ -114,8 +114,15 @@ CREATE TABLE Photos (
     photo_created_time TIMESTAMP NOT NULL,
     photo_modified_time TIMESTAMP,
     photo_link VARCHAR2(2000) NOT NULL,
-    FOREIGN KEY (album_id) REFERENCES Albums(album_id)
+    FOREIGN KEY (album_id) REFERENCES Albums(album_id) INITIALLY DEFERRED DEFERRABLE
 );
+
+--Photos created after Albums so need circular dependency
+--Do we need 2 statements? or just one since Albums is created before photos?
+ALTER TABLE Albums
+ADD CONSTRAINT albumtophoto
+FOREIGN KEY (cover_photo_id) REFERENCES Photos(photo_id) -- ON DELETE CASCADE? if coverphoto is deleted then photo is deleted
+INITIALLY DEFERRED DEFERRABLE;
 
 CREATE TABLE Tags (
     tag_photo_id INTEGER NOT NULL, 
@@ -123,7 +130,44 @@ CREATE TABLE Tags (
     tag_created_time TIMESTAMP NOT NULL,
     tag_x NUMBER NOT NULL,
     tag_y NUMBER NOT NULL,
-    PRIMARY KEY (tag_photo_id, tag_subject_id)
+    PRIMARY KEY (tag_photo_id, tag_subject_id),
     FOREIGN KEY (tag_photo_id) REFERENCES Photos(photo_id),
     FOREIGN KEY (tag_subject_id) REFERENCES Users(user_id)
 );
+
+CREATE TRIGGER Order_Friend_Pairs
+    BEFORE INSERT ON Friends
+    FOR EACH ROW
+        DECLARE temp INTEGER;
+        BEGIN
+            IF :NEW.user1_id > :NEW.user2_id THEN
+                temp := :NEW.user2_id;
+                :NEW.user2_id := :NEW.user1_id;
+                :NEW.user1_id := temp;
+            END IF;
+        END;
+/
+
+-- create sequences for the primary keys in the tables which are not included in public database
+
+CREATE SEQUENCE Sequence_City
+    START WITH 1
+    INCREMENT BY 1;
+CREATE TRIGGER Add_City
+    BEFORE INSERT ON Cities
+    FOR EACH ROW
+        BEGIN
+            SELECT Sequence_City.NEXTVAL INTO :NEW.city_id FROM DUAL;
+        END;
+/
+
+CREATE SEQUENCE Sequence_Program
+    START WITH 1
+    INCREMENT BY 1;
+CREATE TRIGGER Add_Program
+    BEFORE INSERT ON Programs
+    FOR EACH ROW
+        BEGIN
+            SELECT Sequence_Program.NEXTVAL INTO :NEW.program_id FROM DUAL;
+        END;
+/
